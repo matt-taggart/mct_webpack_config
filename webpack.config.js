@@ -2,6 +2,7 @@ const { resolve } = require('path');
 const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const ExtractTextPlugin = require('extract-text-webpack-plugin');
+const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
 
 const cssDevMode = ['style-loader', 'css-loader', 'sass-loader'];
 const cssProdMode = ExtractTextPlugin.extract({
@@ -11,7 +12,7 @@ const cssProdMode = ExtractTextPlugin.extract({
 
 module.exports = ({ production = false }) => ({
   context: resolve('src'),
-  entry: ['./index.jsx', './style.scss'],
+  entry: ['babel-polyfill', './index.jsx', './style.scss'],
   output: {
     path: resolve('dist'),
     filename: 'bundle.js',
@@ -32,17 +33,6 @@ module.exports = ({ production = false }) => ({
         exclude: /node_modules/,
         use: {
           loader: 'babel-loader',
-          options: {
-            presets: [
-              ['env', {
-                targets: {
-                  node: 'current',
-                },
-              }],
-              'react',
-              'stage-2',
-            ],
-          },
         },
       },
       {
@@ -66,13 +56,18 @@ module.exports = ({ production = false }) => ({
       hash: true,
       template: './index.ejs',
     }),
-    new webpack.optimize.UglifyJsPlugin({
+    new UglifyJsPlugin({
       exclude: /node_modules/,
-      compress: {
-        warnings: false,
-        drop_console: false,
-      },
+      parallel: true,
       sourceMap: true,
+      uglifyOptions: {
+        ie8: false,
+        ecma: 8,
+        compress: {
+          warnings: false,
+          drop_console: false,
+        },
+      },
     }),
     new webpack.NamedModulesPlugin(),
   ],
