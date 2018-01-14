@@ -70,6 +70,11 @@ module.exports = ({ production = false }) => ({
       },
     }),
     new webpack.NamedModulesPlugin(),
+    new webpack.DefinePlugin({
+      'process.env.NODE_ENV': production
+        ? JSON.stringify('production')
+        : JSON.stringify('dev'),
+    }),
   ],
   resolve: {
     extensions: ['.js', '.jsx'],
