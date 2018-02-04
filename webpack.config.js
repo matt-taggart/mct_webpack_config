@@ -1,82 +1,131 @@
-const { resolve } = require('path');
 const webpack = require('webpack');
+const { join } = require('path');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
-const ExtractTextPlugin = require('extract-text-webpack-plugin');
-const UglifyJsPlugin = require('uglifyjs-webpack-plugin');
+const CleanWebpackPlugin = require('clean-webpack-plugin');
+const { BundleAnalyzerPlugin } = require('webpack-bundle-analyzer');
+const merge = require('webpack-merge');
 
-const cssDevMode = ['style-loader', 'css-loader', 'sass-loader'];
-const cssProdMode = ExtractTextPlugin.extract({
-  fallback: 'style-loader',
-  use: ['css-loader', 'sass-loader'],
-});
+const parts = require('./webpack.parts');
 
-module.exports = ({ production = false }) => ({
-  context: resolve('src'),
-  entry: ['babel-polyfill', './index.jsx', './style.scss'],
-  output: {
-    path: resolve('dist'),
-    filename: 'bundle.js',
-    pathinfo: !production,
-    publicPath: '/',
-  },
-  devtool: production ? 'source-map' : 'eval',
-  devServer: {
-    contentBase: resolve('dist'),
-    compress: true,
-    historyApiFallback: true,
-    port: 9000,
-  },
-  module: {
-    rules: [
-      {
-        test: /\.jsx?$/,
-        exclude: /node_modules/,
-        use: {
-          loader: 'babel-loader',
+const commonConfig = merge([
+  {
+    entry: {
+      src: ['babel-polyfill', join(__dirname, 'src', 'index.jsx')],
+    },
+    output: {
+      path: join(__dirname, 'dist'),
+      filename: '[name].js',
+    },
+    plugins: [
+      new HtmlWebpackPlugin({
+        title: 'Project',
+        minify: {
+          collapseWhitespace: true,
         },
-      },
-      {
-        test: /\.scss$/,
-        exclude: /node_modules/,
-        use: production ? cssProdMode : cssDevMode,
-      },
+        hash: true,
+        template: join(__dirname, 'src', './index.ejs'),
+      }),
+      new webpack.NamedModulesPlugin(),
+      new webpack.IgnorePlugin(/^\.\/locale$/, /moment$/),
+    ],
+    resolve: {
+      extensions: ['.js', '.jsx'],
+    },
+  },
+  parts.loadFonts({
+    options: {
+      name: '[name].[hash].[ext]',
+    },
+  }),
+  parts.loadJavascript({
+    include: join(__dirname, 'src'),
+    exclude: /node_modules/,
+  }),
+]);
+
+const productionConfig = merge([
+  {
+    output: {
+      chunkFilename: '[name].[chunkhash].js',
+      filename: '[name].[chunkhash].js',
+    },
+    plugins: [
+      new BundleAnalyzerPlugin(),
+      new CleanWebpackPlugin('dist'),
     ],
   },
-  plugins: [
-    new ExtractTextPlugin({
-      filename: './style.css',
-      allChunks: true,
-      disable: !production,
-    }),
-    new HtmlWebpackPlugin({
-      title: 'Project',
-      minify: {
-        collapseWhitespace: production,
-      },
-      hash: true,
-      template: './index.ejs',
-    }),
-    new UglifyJsPlugin({
-      exclude: /node_modules/,
-      parallel: true,
-      sourceMap: true,
-      uglifyOptions: {
-        ie8: false,
-        ecma: 8,
-        compress: {
-          warnings: false,
-          drop_console: false,
+  parts.extractBundles([
+    {
+      name: 'vendor',
+      minChunks: ({ resource }) => /node_modules/.test(resource),
+    },
+    {
+      name: 'manifest',
+      minChunks: Infinity,
+    },
+  ]),
+  parts.extractCSS({
+    use: [
+      'css-loader',
+      {
+        loader: 'postcss-loader',
+        options: {
+          plugins: () => [require('autoprefixer')],
         },
       },
-    }),
-    new webpack.NamedModulesPlugin(),
-    new webpack.DefinePlugin({
-      'process.env.NODE_ENV': production
-        ? JSON.stringify('production')
-        : JSON.stringify('dev'),
-    }),
-  ],
-  resolve: {
-    extensions: ['.js', '.jsx'],
+      'sass-loader',
+    ],
+  }),
+  parts.purifyCSS({
+    paths: glob.sync(`${join(__dirname, 'src')}/**/*.js`, { nodir: true }),
+  }),
+  parts.loadImages({
+    options: {
+      limit: 15000,
+      name: '[name].[hash].[ext]',
+    },
+  }),
+  parts.generateSourceMaps({ type: 'source-map' }),
+  parts.minifyJavascript(),
+  parts.minifyCSS({
+    options: {
+      discardComments: {
+        removeAll: true,
+      },
+      safe: true,
+    },
+  }),
+  parts.setVariable('process.env.NODE_ENV', 'production'),
+]);
+
+const developmentConfig = merge([
+  parts.devServer({
+    host: process.env.HOST,
+    port: process.env.PORT,
+  }),
+  parts.loadCSS(),
+  parts.loadImages(),
+  parts.generateSourceMaps({
+    type: 'cheap-module-eval-source-map',
+  }),
+  {
+    output: {
+      publicPath: '/',
+      devtoolModuleFilenameTemplate:
+        'webpack:///[absolute-resource-path]',
+    },
+    plugins: [
+      new webpack.HotModuleReplacementPlugin(),
+    ],
   },
-});
+]);
+
+module.exports = env => {
+  if (env === 'production') {
+    return merge(commonConfig, productionConfig);
+  }
+  return merge(commonConfig, developmentConfig);
+};
+
+// TODO: Add webpack dashboard plugin
+// TODO: Add SourceMapDevToolPlugin
